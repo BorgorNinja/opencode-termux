@@ -1,0 +1,60 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -e
+# stale-runtime-quarantine: $PREFIX/lib/opencode/runtime/opencode may be a
+# pre-v12.1 v1-era leftover (e.g. a June 1.17.9) that no current package owns.
+# Conservative rename-backup ONLY if all hold: file exists, unowned
+# (dpkg -S finds no package), and same-arch (aarch64 ELF) as this runtime.
+# NEVER rm user files; the owner (user) decides deletion.
+STALE="$PREFIX/lib/opencode/runtime/opencode"
+if [ -f "$STALE" ] && command -v file >/dev/null 2>&1; then
+  if ! dpkg -S "$STALE" >/dev/null 2>&1; then
+    case "$(file -b "$STALE")" in
+      *ELF*aarch64*|*aarch64*ELF*)
+        BAK="$STALE.stale-$(date +%Y%m%d)"
+        if mv -n "$STALE" "$BAK" 2>/dev/null && [ ! -f "$STALE" ]; then
+          echo "Quarantined unowned stale runtime: $STALE -> $BAK"
+          echo "(no dpkg package owns it; delete manually if unneeded)"
+        fi
+        ;;
+    esac
+  fi
+fi
+
+# v1 (opencode1) or v2 (opencode) install hook.
+# v1: auto-migrate any pre-v2-era config under ~/.config/opencode (etc.) into
+#     the opencode1-isolated dirs, exactly once, never clobbering existing
+#     opencode1 data. Requires scripts/migrate-to-opencode1.sh to be on PATH.
+CFG_DIR="$(printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/opencode")"
+case "${PKG_NAME:-$DPKG_MAINTSCRIPT_PACKAGE}" in
+  opencode1)
+    echo "OpenCode1 (v1 family) installed — coexists with v2 opencode."
+    # Feature detection FIRST (v12.2): `check` prints the detected state and
+    # exits 0 when every skip condition is met — only then does isolate run,
+    # and unsilenced so the operator sees detected-state and every action.
+    if { [ -e "$CFG_DIR" ] || [ -d "${CFG_DIR}1" ]; } && command -v migrate-to-opencode1.sh >/dev/null 2>&1; then
+      if migrate-to-opencode1.sh check; then
+        echo "Feature check: nothing to migrate — skipped (already isolated / no v1-era data / plugins clean)."
+      elif migrate-to-opencode1.sh isolate; then
+        echo "Migrated: v1 config now under opencode1/opencode (nested), plugins auto-patched (see detected-state above)."
+      else
+        echo "Migration not completed (see detected-state above); data left untouched."
+        # v2 guard may have blocked the plain->nested move. If v1-era leftovers
+        # still live at the plain roots, surface the explicit recovery path.
+        if { [ -f "${HOME}/.local/share/opencode/opencode.db" ] || [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ]; } \
+           && [ ! -e "${HOME}/.local/share/opencode1/opencode/opencode.db" ] \
+           && command -v migrate-to-opencode1.sh >/dev/null 2>&1; then
+          echo "NOTE: v1-era data still at the plain opencode/ roots and the opencode1"
+          echo "      nested roots are empty. If those plain dirs hold v1 leftovers you"
+          echo "      want opencode1 to see, run:  migrate-to-opencode1.sh isolate --take-plain"
+          echo "      (skipped automatically because a v2 opencode package is installed)."
+        fi
+      fi
+    else
+      echo "No legacy v1 config found (or already isolated); nothing to migrate."
+    fi
+    ;;
+  opencode)
+    echo "OpenCode v2 (mainline) installed — coexists with v1 opencode1."
+    ;;
+esac
+exit 0

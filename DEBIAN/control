@@ -1,0 +1,11 @@
+Package: opencode
+Version: 2.0.31
+Architecture: aarch64
+Maintainer: Hope2333(幽零小喵) <u0catmiao@proton.me>
+Section: utils
+Priority: optional
+Depends:
+Conflicts: opencode-wrapper
+Replaces: opencode1-wrapper-standalone
+Description: OpenCode native bionic mainline (stable since 27/28). Full TUI via bionic libopentui.so (W10a deep smoke 5/5). Zero glibc dependencies.
+Installed-Size: 298843
